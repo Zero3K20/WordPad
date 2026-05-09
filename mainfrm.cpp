@@ -123,6 +123,9 @@ static UINT BASED_CODE indicators[] =
 	ID_INDICATOR_NUM,
 };
 
+static const int kDocTabHeight = 24;
+static const UINT kDragQueryFileCount = (UINT)-1;
+
 /////////////////////////////////////////////////////////////////////////////
 // CMainFrame construction/destruction
 
@@ -367,13 +370,12 @@ void CMainFrame::OnSize(UINT nType, int cx, int cy)
 		CRect rect;
 		GetClientRect(rect);
 		RepositionBars(0, 0xffff, AFX_IDW_PANE_FIRST, reposQuery, &rect);
-		int nTabHeight = 24;
-		m_wndDocTabs.MoveWindow(rect.left, rect.top, rect.Width(), nTabHeight);
+		m_wndDocTabs.MoveWindow(rect.left, rect.top, rect.Width(), kDocTabHeight);
 		CWnd* pView = GetDlgItem(AFX_IDW_PANE_FIRST);
 		if (pView != NULL)
 		{
-			pView->MoveWindow(rect.left, rect.top + nTabHeight, rect.Width(),
-				max(0, rect.Height() - nTabHeight));
+			pView->MoveWindow(rect.left, rect.top + kDocTabHeight, rect.Width(),
+				max(0, rect.Height() - kDocTabHeight));
 		}
 	}
 }
@@ -423,9 +425,9 @@ void CMainFrame::OnMove(int x, int y)
 LONG_PTR CMainFrame::OnOpenMsg(UINT_PTR, LONG_PTR lParam)
 {
 	TCHAR szAtomName[256];
-	szAtomName[0] = NULL;
+	szAtomName[0] = _T('\0');
 	GlobalGetAtomName((ATOM)lParam, szAtomName, 256);
-	if (szAtomName[0] == NULL)
+	if (szAtomName[0] == _T('\0'))
 		return FALSE;
 	int nTab = FindTabByPath(szAtomName);
 	if (nTab >= 0 && ActivateTab(nTab))
@@ -441,7 +443,7 @@ void CMainFrame::OnHelpFinder()
 void CMainFrame::OnDropFiles(HDROP hDropInfo)
 {
 	TCHAR szFileName[_MAX_PATH];
-	UINT nFiles = ::DragQueryFile(hDropInfo, 0xFFFFFFFF, NULL, 0);
+	UINT nFiles = ::DragQueryFile(hDropInfo, kDragQueryFileCount, NULL, 0);
 	SyncActiveTabWithDocument();
 	for (UINT nFile = 0; nFile < nFiles; ++nFile)
 	{
@@ -494,7 +496,7 @@ void CMainFrame::OnSelChangeDocTabs(NMHDR*, LRESULT* pResult)
 
 int CMainFrame::FindTabByPath(LPCTSTR lpszPathName) const
 {
-	if (lpszPathName == NULL || lpszPathName[0] == NULL)
+	if (lpszPathName == NULL || lpszPathName[0] == _T('\0'))
 		return -1;
 	for (int i = 0; i < m_tabPaths.GetSize(); ++i)
 	{
@@ -553,7 +555,7 @@ BOOL CMainFrame::ActivateTab(int nTab)
 
 BOOL CMainFrame::OpenDocumentAsTab(LPCTSTR lpszPathName)
 {
-	if (lpszPathName == NULL || lpszPathName[0] == NULL)
+	if (lpszPathName == NULL || lpszPathName[0] == _T('\0'))
 		return FALSE;
 	TCHAR szPath[_MAX_PATH];
 	AfxFullPath(szPath, lpszPathName);
