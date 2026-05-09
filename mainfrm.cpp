@@ -18,6 +18,8 @@
 #include "strings.h"
 #include "colorlis.h"
 
+extern BOOL AFXAPI AfxFullPath(LPTSTR lpszPathOut, LPCTSTR lpszFileIn);
+
 #ifdef _DEBUG
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
@@ -35,6 +37,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_WM_SIZE()
 	ON_WM_MOVE()
 	ON_COMMAND(ID_HELP, OnHelpFinder)
+	ON_COMMAND(ID_FILE_NEW, OnFileNew)
+	ON_COMMAND(ID_FILE_OPEN, OnFileOpen)
 	ON_WM_DROPFILES()
 	ON_COMMAND(ID_CHAR_COLOR, OnCharColor)
 	ON_COMMAND(ID_PEN_TOGGLE, OnPenToggle)
@@ -42,6 +46,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_WM_QUERYNEWPALETTE()
 	ON_WM_PALETTECHANGED()
 	ON_WM_DEVMODECHANGE()
+	ON_NOTIFY(TCN_SELCHANGE, IDC_DOC_TABS, OnSelChangeDocTabs)
 	ON_COMMAND(ID_HELP_INDEX, OnHelpFinder)
 	//}}AFX_MSG_MAP
 	// Global help commands
@@ -118,10 +123,19 @@ static UINT BASED_CODE indicators[] =
 	ID_INDICATOR_NUM,
 };
 
+static const int kDocTabHeight = 24;
+static const UINT kDragQueryAllFiles = 0xFFFFFFFFU;
+
+static BOOL HasPath(LPCTSTR lpszPathName)
+{
+	return lpszPathName != NULL && lpszPathName[0] != _T('\0');
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // CMainFrame construction/destruction
 
 CMainFrame::CMainFrame()
+	: m_nActiveTab(-1), m_bChangingTabs(FALSE)
 {
 	m_hIconDoc = theApp.LoadIcon(IDI_ICON_DOC);
 	m_hIconText = theApp.LoadIcon(IDI_ICON_TEXT);
@@ -185,6 +199,13 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
 	if (!CreateStatusBar())
 		return -1;
+
+	if (!m_wndDocTabs.Create(WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|TCS_TABS,
+		CRect(0, 0, 0, 0), this, IDC_DOC_TABS))
+	{
+		TRACE0("Failed to create document tabs\n");
+		return -1;
+	}
 
 	EnableDocking(CBRS_ALIGN_ANY);
 
@@ -339,6 +360,7 @@ void CMainFrame::ActivateFrame(int nCmdShow)
 	CFrameWnd::ActivateFrame(nCmdShow);
 	// make sure and display the toolbar, ruler, etc while loading a document.
 	OnIdleUpdateCmdUI();
+	SyncActiveTabWithDocument();
 	UpdateWindow();
 }
 
@@ -348,6 +370,19 @@ void CMainFrame::OnSize(UINT nType, int cx, int cy)
 	theApp.m_bMaximized = (nType == SIZE_MAXIMIZED);
 	if (nType == SIZE_RESTORED)
 		GetWindowRect(theApp.m_rectInitialFrame);
+	if (::IsWindow(m_wndDocTabs.GetSafeHwnd()))
+	{
+		CRect rect;
+		GetClientRect(rect);
+		RepositionBars(0, 0xffff, AFX_IDW_PANE_FIRST, reposQuery, &rect);
+		m_wndDocTabs.MoveWindow(rect.left, rect.top, rect.Width(), kDocTabHeight);
+		CWnd* pView = GetDlgItem(AFX_IDW_PANE_FIRST);
+		if (pView != NULL)
+		{
+			pView->MoveWindow(rect.left, rect.top + kDocTabHeight, rect.Width(),
+				max(0, rect.Height() - kDocTabHeight));
+		}
+	}
 }
 
 LONG_PTR CMainFrame::OnBarState(UINT_PTR wParam, LONG_PTR lParam)
@@ -395,15 +430,14 @@ void CMainFrame::OnMove(int x, int y)
 LONG_PTR CMainFrame::OnOpenMsg(UINT_PTR, LONG_PTR lParam)
 {
 	TCHAR szAtomName[256];
-	szAtomName[0] = NULL;
+	szAtomName[0] = _T('\0');
 	GlobalGetAtomName((ATOM)lParam, szAtomName, 256);
-	CWordPadDoc* pDoc = (CWordPadDoc*)GetActiveDocument();
-	if (szAtomName[0] != NULL && pDoc != NULL)
-	{
-		if (lstrcmpi(szAtomName, pDoc->GetPathName()) == 0)
-			return TRUE;
-	}
-	return FALSE;
+	if (szAtomName[0] == _T('\0'))
+		return FALSE;
+	int nTab = FindTabByPath(szAtomName);
+	if (nTab >= 0 && ActivateTab(nTab))
+		return TRUE;
+	return OpenDocumentAsTab(szAtomName);
 }
 
 void CMainFrame::OnHelpFinder()
@@ -414,9 +448,160 @@ void CMainFrame::OnHelpFinder()
 void CMainFrame::OnDropFiles(HDROP hDropInfo)
 {
 	TCHAR szFileName[_MAX_PATH];
-	::DragQueryFile(hDropInfo, 0, szFileName, _MAX_PATH);
+	UINT nFiles = ::DragQueryFile(hDropInfo, kDragQueryAllFiles, NULL, 0);
+	SyncActiveTabWithDocument();
+	for (UINT nFile = 0; nFile < nFiles; ++nFile)
+	{
+		::DragQueryFile(hDropInfo, nFile, szFileName, _MAX_PATH);
+		OpenDocumentAsTab(szFileName);
+	}
 	::DragFinish(hDropInfo);
-	theApp.OpenDocumentFile(szFileName);
+}
+
+void CMainFrame::OnFileOpen()
+{
+	CString newName;
+	int nType = RD_DEFAULT;
+	if (!theApp.PromptForFileName(newName, AFX_IDS_OPENFILE,
+		OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, TRUE, &nType))
+	{
+		return;
+	}
+
+	SyncActiveTabWithDocument();
+	if (nType == RD_OEMTEXT)
+		theApp.m_bForceOEM = TRUE;
+	OpenDocumentAsTab(newName);
+	theApp.m_bForceOEM = FALSE;
+}
+
+void CMainFrame::OnFileNew()
+{
+	SyncActiveTabWithDocument();
+	int nTab = m_wndDocTabs.InsertItem(m_wndDocTabs.GetItemCount(), _T("Untitled"));
+	m_tabPaths.Add(_T(""));
+	m_nActiveTab = nTab;
+	m_bChangingTabs = TRUE;
+	m_wndDocTabs.SetCurSel(nTab);
+	m_bChangingTabs = FALSE;
+	theApp.OnFileNew();
+	SyncActiveTabWithDocument();
+}
+
+void CMainFrame::OnSelChangeDocTabs(NMHDR*, LRESULT* pResult)
+{
+	if (pResult != NULL)
+		*pResult = 0;
+	if (m_bChangingTabs)
+		return;
+	int nSel = m_wndDocTabs.GetCurSel();
+	if (nSel >= 0 && nSel != m_nActiveTab)
+		ActivateTab(nSel);
+}
+
+int CMainFrame::FindTabByPath(LPCTSTR lpszPathName) const
+{
+	if (!HasPath(lpszPathName))
+		return -1;
+	TCHAR szPath[_MAX_PATH];
+	if (!AfxFullPath(szPath, lpszPathName))
+		return -1;
+	for (int i = 0; i < m_tabPaths.GetSize(); ++i)
+	{
+		if (!m_tabPaths[i].IsEmpty() && lstrcmpi(m_tabPaths[i], szPath) == 0)
+			return i;
+	}
+	return -1;
+}
+
+void CMainFrame::UpdateTabText(int nTab)
+{
+	if (nTab < 0 || nTab >= m_wndDocTabs.GetItemCount())
+		return;
+	TC_ITEM item;
+	item.mask = TCIF_TEXT;
+	CString strText;
+	if (nTab < m_tabPaths.GetSize() && !m_tabPaths[nTab].IsEmpty())
+	{
+		strText = m_tabPaths[nTab];
+		int nPos = strText.ReverseFind(_T('\\'));
+		if (nPos >= 0)
+			strText = strText.Mid(nPos + 1);
+	}
+	if (strText.IsEmpty())
+		strText = _T("Untitled");
+	item.pszText = strText.GetBuffer(strText.GetLength());
+	m_wndDocTabs.SetItem(nTab, &item);
+	strText.ReleaseBuffer();
+}
+
+BOOL CMainFrame::ActivateTab(int nTab)
+{
+	if (nTab < 0 || nTab >= m_tabPaths.GetSize())
+		return FALSE;
+
+	SyncActiveTabWithDocument();
+	m_bChangingTabs = TRUE;
+	BOOL bOpened = FALSE;
+	if (m_tabPaths[nTab].IsEmpty())
+		bOpened = theApp.OpenDocumentFile(NULL) != NULL;
+	else
+		bOpened = theApp.OpenDocumentFile(m_tabPaths[nTab]) != NULL;
+	if (bOpened)
+	{
+		m_nActiveTab = nTab;
+		m_wndDocTabs.SetCurSel(nTab);
+		SyncActiveTabWithDocument();
+	}
+	else if (m_nActiveTab >= 0 && m_nActiveTab < m_wndDocTabs.GetItemCount())
+	{
+		m_wndDocTabs.SetCurSel(m_nActiveTab);
+	}
+	m_bChangingTabs = FALSE;
+	return bOpened;
+}
+
+BOOL CMainFrame::OpenDocumentAsTab(LPCTSTR lpszPathName)
+{
+	if (!HasPath(lpszPathName))
+		return FALSE;
+	TCHAR szPath[_MAX_PATH];
+	if (!AfxFullPath(szPath, lpszPathName))
+	{
+		TRACE0("Failed to resolve document path for tab open\n");
+		return FALSE;
+	}
+	int nTab = FindTabByPath(szPath);
+	if (nTab < 0)
+	{
+		nTab = m_wndDocTabs.InsertItem(m_wndDocTabs.GetItemCount(), _T(""));
+		m_tabPaths.Add(szPath);
+		UpdateTabText(nTab);
+	}
+	return ActivateTab(nTab);
+}
+
+void CMainFrame::SyncActiveTabWithDocument()
+{
+	if (!::IsWindow(m_wndDocTabs.GetSafeHwnd()))
+		return;
+	CWordPadDoc* pDoc = (CWordPadDoc*)GetActiveDocument();
+	if (pDoc == NULL)
+		return;
+	CString strPath = pDoc->GetPathName();
+	if (m_nActiveTab < 0 || m_nActiveTab >= m_tabPaths.GetSize())
+	{
+		m_nActiveTab = m_wndDocTabs.InsertItem(m_wndDocTabs.GetItemCount(), _T(""));
+		m_tabPaths.Add(strPath);
+	}
+	else
+	{
+		m_tabPaths[m_nActiveTab] = strPath;
+	}
+	UpdateTabText(m_nActiveTab);
+	m_bChangingTabs = TRUE;
+	m_wndDocTabs.SetCurSel(m_nActiveTab);
+	m_bChangingTabs = FALSE;
 }
 
 void CMainFrame::OnCharColor()

@@ -167,6 +167,7 @@
 #define IDC_EDIT_AFTER                  1036
 #define IDC_SPIN_BEFORE                 1038
 #define IDC_SPIN_AFTER                  1039
+#define IDC_DOC_TABS                    1040
 #define ID_CANCEL_EDIT_CNTR             32768
 #define ID_CANCEL_EDIT_SRVR             32769
 #define ID_PAGE_SETUP                   32771
@@ -217,7 +218,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        172
 #define _APS_NEXT_COMMAND_VALUE         32816
-#define _APS_NEXT_CONTROL_VALUE         1040
+#define _APS_NEXT_CONTROL_VALUE         1041
 #define _APS_NEXT_SYMED_VALUE           103
 #endif
 #endif
