@@ -54,7 +54,7 @@ public:
 	CFormatBar  m_wndFormatBar;
 	CRulerBar   m_wndRulerBar;
 	CTabCtrl m_wndDocTabs;
-	CArray<CString, CString&> m_tabPaths;
+	CArray<CString, const CString&> m_tabPaths;
 	int m_nActiveTab;
 	BOOL m_bChangingTabs;
 protected:  // control bar embedded members
