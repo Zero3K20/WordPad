@@ -11,6 +11,7 @@
 
 #include "formatba.h"
 #include "ruler.h"
+#include <afxcmn.h>
 
 class CMainFrame : public CFrameWnd
 {
@@ -24,6 +25,8 @@ public:
 	HICON m_hIconText;
 	HICON m_hIconWrite;
 	HICON GetIcon(int nDocType);
+	BOOL OpenDocumentAsTab(LPCTSTR lpszPathName);
+	void SyncActiveTabWithDocument();
 
 // Operations
 public:
@@ -50,11 +53,18 @@ public:
 	CStatusBar  m_wndStatusBar;
 	CFormatBar  m_wndFormatBar;
 	CRulerBar   m_wndRulerBar;
+	CTabCtrl m_wndDocTabs;
+	CArray<CString, CString&> m_tabPaths;
+	int m_nActiveTab;
+	BOOL m_bChangingTabs;
 protected:  // control bar embedded members
 	BOOL CreateToolBar();
 	BOOL CreateFormatBar();
 	BOOL CreateStatusBar();
 	BOOL CreateRulerBar();
+	int FindTabByPath(LPCTSTR lpszPathName) const;
+	void UpdateTabText(int nTab);
+	BOOL ActivateTab(int nTab);
 // Generated message map functions
 protected:
 	//{{AFX_MSG(CMainFrame)
@@ -63,12 +73,15 @@ protected:
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnMove(int x, int y);
 	afx_msg void OnHelpFinder();
+	afx_msg void OnFileOpen();
+	afx_msg void OnFileNew();
 	afx_msg void OnDropFiles(HDROP hDropInfo);
 	afx_msg void OnCharColor();
 	afx_msg void OnPenToggle();
 	afx_msg void OnFontChange();
 	afx_msg BOOL OnQueryNewPalette();
 	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
+	afx_msg void OnSelChangeDocTabs(NMHDR* pNMHDR, LRESULT* pResult);
 	afx_msg void OnDevModeChange(LPTSTR lpDeviceName);
 	//}}AFX_MSG
 	afx_msg LONG_PTR OnBarState(UINT_PTR wParam, LONG_PTR lParam);
