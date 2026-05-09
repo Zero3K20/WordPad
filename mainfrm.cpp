@@ -124,7 +124,12 @@ static UINT BASED_CODE indicators[] =
 };
 
 static const int kDocTabHeight = 24;
-static const UINT kDragQueryFileCount = (UINT)-1;
+static const UINT kDragQueryAllFiles = (UINT)-1;
+
+static BOOL HasPath(LPCTSTR lpszPathName)
+{
+	return lpszPathName != NULL && lpszPathName[0] != _T('\0');
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CMainFrame construction/destruction
@@ -443,7 +448,7 @@ void CMainFrame::OnHelpFinder()
 void CMainFrame::OnDropFiles(HDROP hDropInfo)
 {
 	TCHAR szFileName[_MAX_PATH];
-	UINT nFiles = ::DragQueryFile(hDropInfo, kDragQueryFileCount, NULL, 0);
+	UINT nFiles = ::DragQueryFile(hDropInfo, kDragQueryAllFiles, NULL, 0);
 	SyncActiveTabWithDocument();
 	for (UINT nFile = 0; nFile < nFiles; ++nFile)
 	{
@@ -496,7 +501,7 @@ void CMainFrame::OnSelChangeDocTabs(NMHDR*, LRESULT* pResult)
 
 int CMainFrame::FindTabByPath(LPCTSTR lpszPathName) const
 {
-	if (lpszPathName == NULL || lpszPathName[0] == _T('\0'))
+	if (!HasPath(lpszPathName))
 		return -1;
 	for (int i = 0; i < m_tabPaths.GetSize(); ++i)
 	{
@@ -522,9 +527,8 @@ void CMainFrame::UpdateTabText(int nTab)
 	}
 	if (strText.IsEmpty())
 		strText = _T("Untitled");
-	item.pszText = strText.GetBuffer(0);
+	item.pszText = const_cast<LPTSTR>((LPCTSTR)strText);
 	m_wndDocTabs.SetItem(nTab, &item);
-	strText.ReleaseBuffer();
 }
 
 BOOL CMainFrame::ActivateTab(int nTab)
@@ -555,10 +559,11 @@ BOOL CMainFrame::ActivateTab(int nTab)
 
 BOOL CMainFrame::OpenDocumentAsTab(LPCTSTR lpszPathName)
 {
-	if (lpszPathName == NULL || lpszPathName[0] == _T('\0'))
+	if (!HasPath(lpszPathName))
 		return FALSE;
 	TCHAR szPath[_MAX_PATH];
-	AfxFullPath(szPath, lpszPathName);
+	if (!AfxFullPath(szPath, lpszPathName))
+		return FALSE;
 	int nTab = FindTabByPath(szPath);
 	if (nTab < 0)
 	{
