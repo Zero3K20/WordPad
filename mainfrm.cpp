@@ -124,7 +124,7 @@ static UINT BASED_CODE indicators[] =
 };
 
 static const int kDocTabHeight = 24;
-static const UINT kDragQueryAllFiles = (UINT)-1;
+static const UINT kDragQueryAllFiles = 0xFFFFFFFFU;
 
 static BOOL HasPath(LPCTSTR lpszPathName)
 {
@@ -503,9 +503,12 @@ int CMainFrame::FindTabByPath(LPCTSTR lpszPathName) const
 {
 	if (!HasPath(lpszPathName))
 		return -1;
+	TCHAR szPath[_MAX_PATH];
+	if (!AfxFullPath(szPath, lpszPathName))
+		return -1;
 	for (int i = 0; i < m_tabPaths.GetSize(); ++i)
 	{
-		if (!m_tabPaths[i].IsEmpty() && lstrcmpi(m_tabPaths[i], lpszPathName) == 0)
+		if (!m_tabPaths[i].IsEmpty() && lstrcmpi(m_tabPaths[i], szPath) == 0)
 			return i;
 	}
 	return -1;
@@ -527,8 +530,9 @@ void CMainFrame::UpdateTabText(int nTab)
 	}
 	if (strText.IsEmpty())
 		strText = _T("Untitled");
-	item.pszText = const_cast<LPTSTR>((LPCTSTR)strText);
+	item.pszText = strText.GetBuffer(strText.GetLength());
 	m_wndDocTabs.SetItem(nTab, &item);
+	strText.ReleaseBuffer();
 }
 
 BOOL CMainFrame::ActivateTab(int nTab)
@@ -563,7 +567,10 @@ BOOL CMainFrame::OpenDocumentAsTab(LPCTSTR lpszPathName)
 		return FALSE;
 	TCHAR szPath[_MAX_PATH];
 	if (!AfxFullPath(szPath, lpszPathName))
+	{
+		TRACE0("Failed to resolve document path for tab open\n");
 		return FALSE;
+	}
 	int nTab = FindTabByPath(szPath);
 	if (nTab < 0)
 	{
